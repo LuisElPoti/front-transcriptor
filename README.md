@@ -1,36 +1,46 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 🗳️ Transcripción y Tabulación Electoral con Next.js
 
-## Getting Started
+Este proyecto en Next.js permite subir y procesar archivos de audio, transcribirlos en tiempo real y extraer información relevante de carácter electoral, como resultados, nombres de candidatos, partidos y porcentajes de votos.
 
-First, run the development server:
+## 🚀 Características
+
+- 🎙️ Captura y envío de audio desde el navegador.
+- 🧠 Transcripción en tiempo real con Azure Speech to Text (u otro STT).
+- 🗂️ Tabulación de datos electorales desde la transcripción.
+- 💬 Visualización de texto en tiempo real (tipo teleprompter).
+- 📄 Descarga de la transcripción como PDF o DOCX.
+
+## 🛠️ Tecnologías
+
+- [Next.js](https://nextjs.org/)
+- [React](https://reactjs.org/)
+- [WebSockets](https://developer.mozilla.org/en-US/docs/Web/API/WebSockets_API)
+- [Azure Speech to Text](https://learn.microsoft.com/en-us/azure/cognitive-services/speech-service/)
+- [Tailwind CSS](https://tailwindcss.com/) (opcional para estilos)
+- [BlockNote](https://blocknotejs.org/) (editor en tiempo real)
+- [jsPDF](https://github.com/parallax/jsPDF) (para exportar PDF)
+
+## 🧪 Instalación
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+git clone https://github.com/tu-usuario/tu-repo.git
+cd tu-repo
+npm install
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## 🔧 Uso
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+1. Ejecuta el servidor de desarrollo:npm run dev
+2. Abre tu navegador en [http://localhost:3000](http://localhost:3000)
+3. Usa tu micrófono o sube audios para iniciar la transcripción.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## ⚙️ Configuración
 
-## Learn More
+Crea un archivo `.env.local` con tus claves de Azure u otros servicios:
 
-To learn more about Next.js, take a look at the following resources:
+AZURE_SPEECH_KEY=tu_clave
+AZURE_REGION=tu_region
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## 📄 Licencia
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+MIT
