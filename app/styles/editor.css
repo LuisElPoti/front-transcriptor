@@ -1,0 +1,37 @@
+.editor-container {
+    padding: 2rem;
+    background-color: #f3f3f3;
+    min-height: 100vh;
+  }
+  
+  .word-style-editor {
+    background-color: white;
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 3rem;
+    border: 1px solid #ccc;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+    font-family: 'Times New Roman', Times, serif;
+    line-height: 1.6;
+    font-size: 16px;
+    min-height: 1000px;
+    color: #333;
+    text-align: justify;
+  }
+  
+  .download-button {
+    margin-top: 2rem;
+    display: block;
+    background-color: #007bff;
+    color: white;
+    border: none;
+    padding: 0.75rem 1.5rem;
+    border-radius: 8px;
+    font-size: 1rem;
+    cursor: pointer;
+  }
+  
+  .download-button:hover {
+    background-color: #0056b3;
+  }
+  
