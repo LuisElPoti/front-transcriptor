@@ -31,12 +31,14 @@ export interface WebSocketManager {
             if (typeof event.data === 'string') {
               try {
                  parsedData = JSON.parse(event.data);
+                 console.log('Parsed WebSocket message:', parsedData);
               } catch(e){
                  console.warn("WebSocket message is not valid JSON:", event.data);
                  parsedData = event.data; // Enviar como string si no es JSON
               }
             } else {
                parsedData = event.data; // Podría ser Blob o ArrayBuffer
+              console.log('WebSocket message is not a string:', event.data);
             }
             onMessage(parsedData);
           } catch (error) {

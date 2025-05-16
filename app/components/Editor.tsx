@@ -26,9 +26,11 @@ import { text } from "stream/consumers";
 
 export default function Editor() {
 
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL;
+
   const [modo, setModo] = useState<"transcripcion" | "eleccion">("transcripcion");
   // --- Configuración ---
-  const WEBSOCKET_URL = `ws://localhost:8000/ws/stt?modo=${modo}`; // Cambia 'modo' según el modo seleccionado
+  const WEBSOCKET_URL = `wss:${apiUrl}/ws/stt?modo=${modo}`; // Cambia 'modo' según el modo seleccionado
   // Asegúrate que esta ruta sea accesible públicamente desde el navegador
   const AUDIO_WORKLET_URL = "/audio-processor.js";
 
@@ -52,11 +54,21 @@ export default function Editor() {
   const partialTextRef = useRef<string>("");
   const [status, setStatus] = useState<string>("Idle");
   const [isRecording, setIsRecording] = useState<boolean>(false);
+  const [resultados, setResultados] = useState<Array<{ partido: string; votos: number; porcentaje: number }>>([]);
+  const [totales, setTotales] = useState<{ validos: number; blanco: number; nulos: number; participacion: number } | null>(null);
 
 
   const handleModoChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     setModo(e.target.value as "transcripcion" | "eleccion");
   };
+
+  useEffect(() => {
+    console.log("Estado 'resultados' ha cambiado:", resultados);
+  }, [resultados]);
+
+  useEffect(() => {
+    console.log("Estado 'totales' ha cambiado:", totales);
+  }, [totales]);
 
   // --- Callbacks (estables gracias a useCallback) ---
   const handleStatusUpdate = useCallback((newStatus: string) => {
@@ -112,15 +124,20 @@ export default function Editor() {
       console.error("Editor instance is not available in handleWebSocketMessage");
       return;
     }
+    console.log("WebSocket message received in Editor:", data);
+    
     const isEleccion = modo === "eleccion";
     const textContent = typeof data?.text === 'string' ? data.text : '';
     const isFinal = data?.isFinal === true;
     const speakerPrefix = isEleccion ? "" : (data?.speakerId ? `[Speaker ${data.speakerId}]: ` : "");
     const fullText = speakerPrefix + textContent;
     const trimmedContent = textContent.trim();
+    console.log("Texto trimmedcontent:", trimmedContent, "modo:", modo);
 
-  
-    if (!trimmedContent) return;
+    if (!isEleccion) {
+      if (!trimmedContent) return;
+    }
+    
   
     const createTextInlineContent = (
       text: string,
@@ -139,33 +156,104 @@ export default function Editor() {
     const lastBlock = docLength > 0 ? editor.document[docLength - 1] : undefined;
   
     if (isFinal) {
+      console.log("Texto Final establecido");
       if (isEleccion) {
-        // Modo elección: reemplazar el último bloque siempre
-        const partialText = fullText;
+        console.log("[ELECCION] Entrando a la funcion. Data del manager:", data); // Log para ver qué llega
+        try {
+          console.log("[ELECCION] Mensaje final recibido. Data del manager:", data); // Log para ver qué llega
 
-        if (partialBlockIdRef.current) {
-          editor.updateBlock(partialBlockIdRef.current, {
-            content: createTextInlineContent(partialText, false),
-          });
-        } else {
-          const newBlock = {
-            type: "paragraph" as const,
-            content: createTextInlineContent(partialText, false),
-          };
+          let electionPayload;
 
-          let inserted;
-          if (lastBlock) {
-            inserted = editor.insertBlocks([newBlock], lastBlock.id, "after");
-          } else {
-            inserted = editor.insertBlocks([newBlock], "0");
+          // CASO 1: El manager parseó el JSON, 'data' ES el objeto de elección.
+          if (typeof data === 'object' && data !== null && data.text) {
+            console.log("[ELECCION] 'data' es un objeto y parece ser el payload de elección:", data);
+            electionPayload = data.text;
           }
-          partialBlockIdRef.current = inserted[0].id;
+          // CASO 2: El manager NO parseó el JSON (quizás falló o no era string),
+          // y 'data' es un string que PODRÍA ser el JSON de elección.
+          // (El manager ya intenta esto, pero por si acaso o si la lógica del manager cambia)
+          else if (typeof data === 'string') {
+            console.warn("[ELECCION] 'data' es un string. Intentando parsear en Editor:", data);
+            try {
+              electionPayload = JSON.parse(data);
+            } catch (e) {
+              console.error("[ELECCION] Falló el parseo del string JSON en Editor:", e);
+              return; // No se puede procesar
+            }
+          }
+          // CASO 3: Formato inesperado
+          else {
+            console.error("[ELECCION] Formato de datos de elección inesperado:", data);
+            return; // No se puede procesar
+          }
+
+          // Validar el payload determinado
+          if (!electionPayload || !Array.isArray(electionPayload.resultados_por_partido) || typeof electionPayload.resumen_general !== 'object') {
+            return;
+          }
+
+          // Ahora usa electionPayload
+          console.log("[ELECCION] Actualizando estados con electionPayload:", electionPayload);
+          setResultados(electionPayload.resultados_por_partido);
+          setTotales({
+            validos: electionPayload.resumen_general?.total_votos_validos || 0,
+            blanco: electionPayload.resumen_general?.total_votos_blanco || 0,
+            nulos: electionPayload.resumen_general?.total_votos_nulos || 0,
+            participacion: electionPayload.resumen_general?.participacion || 0,
+          });
+          console.log("[ELECCION] Estados de elección actualizados.");
+
+          // (Tu lógica existente para actualizar BlockNoteView con el resumen)
+          // const resumenTexto = electionPayload.resultados_por_partido
+          //   .map((p: any) => `${p.partido}: ${p.votos} votos (${(typeof p.porcentaje === 'number' ? p.porcentaje?.toFixed(2) : p.porcentaje)}%)`)
+          //   .join("\n");
+
+          // const newBlockContent = createTextInlineContent(resumenTexto, false);
+          // const newBlock = { type: "paragraph" as const, content: newBlockContent };
+
+          // if (partialBlockIdRef.current) {
+          //   editor.updateBlock(partialBlockIdRef.current, { content: newBlockContent });
+          // } else {
+          //   const inserted = lastBlock
+          //     ? editor.insertBlocks([newBlock], lastBlock.id, "after")
+          //     : editor.insertBlocks([newBlock], "0");
+          //   if (inserted && inserted.length > 0) {
+          //       partialBlockIdRef.current = inserted[0].id;
+          //   }
+          // }
+
+        } catch (err) {
+          console.error("Error procesando resultados de elección en Editor.tsx:", err);
         }
+        return; // Importante para que no siga a la lógica de transcripción si es elección
+      }
+        // // Modo elección: reemplazar el último bloque siempre
+        // const partialText = fullText;
 
-        partialTextRef.current = partialText;
+        // if (partialBlockIdRef.current) {
+        //   editor.updateBlock(partialBlockIdRef.current, {
+        //     content: createTextInlineContent(partialText, false),
+        //   });
+        // } else {
+        //   const newBlock = {
+        //     type: "paragraph" as const,
+        //     content: createTextInlineContent(partialText, false),
+        //   };
 
-      } else {
+        //   let inserted;
+        //   if (lastBlock) {
+        //     inserted = editor.insertBlocks([newBlock], lastBlock.id, "after");
+        //   } else {
+        //     inserted = editor.insertBlocks([newBlock], "0");
+        //   }
+        //   partialBlockIdRef.current = inserted[0].id;
+        // }
+
+        // partialTextRef.current = partialText;
+
+      else {
         // Modo transcripción normal
+        console.log("Texto final recibido:", fullText);
         if (partialBlockIdRef.current) {
           editor.updateBlock(partialBlockIdRef.current, {
             content: createTextInlineContent(fullText, false),
@@ -435,6 +523,94 @@ export default function Editor() {
     return <p>Initializing BlockNote editor...</p>;
   }
 
+  const renderTablasEleccion = () => {
+    if (modo !== "eleccion") return null;
+    console.log('resultados', resultados)
+    return (
+      <div className="tabla-eleccion">
+        <h2 style={{
+          fontSize: "20px",
+          fontWeight: "bold",
+          marginBottom: "10px",
+          color: "#333",
+        }}>Resultados por Partido</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Partido</th>
+              <th>Votos</th>
+              <th>Porcentaje</th>
+            </tr>
+          </thead>
+          <tbody>
+            {resultados.map((r, i) => (
+              <tr key={i}>
+                <td>{r?.partido}</td>
+                <td>
+                  {typeof r?.votos === "number"
+                    ? r.votos.toLocaleString()
+                    : typeof r?.votos === "string" && !isNaN(Number(r.votos))
+                    ? Number(r.votos).toLocaleString()
+                    : "-"}
+                </td>
+                <td>
+                  {typeof r?.porcentaje === "number"
+                    ? r.porcentaje.toFixed(2) + "%"
+                    : typeof r?.porcentaje === "string" && !isNaN(Number(r.porcentaje))
+                    ? Number(r.porcentaje).toFixed(2) + "%"
+                    : "-"}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+
+        <h2 style={{
+          fontSize: "20px",
+          fontWeight: "bold",
+          marginBottom: "10px",
+          color: "#333",
+        }}>Totales</h2>
+        <table>
+          <tbody>
+            <tr>
+              <td>Votos válidos</td>
+              <td>
+                {totales?.validos != null && !isNaN(Number(totales.validos))
+                  ? Number(totales.validos).toLocaleString()
+                  : "-"}
+              </td>
+            </tr>
+            <tr>
+              <td>Votos en blanco</td>
+              <td>
+                {totales?.blanco != null && !isNaN(Number(totales.blanco))
+                  ? Number(totales.blanco).toLocaleString()
+                  : "-"}
+              </td>
+            </tr>
+            <tr>
+              <td>Votos nulos</td>
+              <td>
+                {totales?.nulos != null && !isNaN(Number(totales.nulos))
+                  ? Number(totales.nulos).toLocaleString()
+                  : "-"}
+              </td>
+            </tr>
+            <tr>
+              <td>Participación</td>
+              <td>
+                {totales?.participacion != null && !isNaN(Number(totales.participacion))
+                  ? `${Number(totales.participacion).toFixed(2)}%`
+                  : "-"}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    );
+  };
+
   return (
     <div className="editor-container">
       <div className="status-bar">
@@ -522,6 +698,7 @@ export default function Editor() {
 
       <div ref={editorRef}>
         <div className="word-style-editor">
+          {renderTablasEleccion()}
           <BlockNoteView editor={editor} theme={"light"} />
         </div>
       </div>

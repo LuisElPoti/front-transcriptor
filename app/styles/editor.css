@@ -34,4 +34,26 @@
   .download-button:hover {
     background-color: #0056b3;
   }
+
+.tabla-eleccion {
+  margin-top: 20px;
+  font-family: Arial, sans-serif;
+}
+
+.tabla-eleccion table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 20px;
+}
+
+.tabla-eleccion th,
+.tabla-eleccion td {
+  border: 1px solid #ddd;
+  padding: 8px;
+  text-align: left;
+}
+
+.tabla-eleccion th {
+  background-color: #f2f2f2;
+}
   
