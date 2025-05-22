@@ -19,8 +19,7 @@ import { AudioManager } from "../utils/audioManager";
 import "../styles/editor.css";
 import { Block, InlineContent, BlockNoteEditor, defaultStyleSchema } from "@blocknote/core";
 import { BlockNoteSchema, defaultStyleSpecs } from "@blocknote/core";
-import { color } from "html2canvas/dist/types/css/types/color";
-import { text } from "stream/consumers";
+
 
 
 
@@ -428,95 +427,198 @@ export default function Editor() {
   const handleStopRecording = useCallback(async () => {
     console.log("handleStopRecording called. isRecording:", isRecording);
     if (!isRecording) return;
+
+    setIsRecording(false);
     // Usar la instancia de AudioManager creada con useMemo
-    if (audioManager && isRecording) {
-      // Añadir chequeo para audioManager
-      await audioManager.stop();
+    if (audioManager) {
+      try{
+        await audioManager.stop();
+      }catch (error) {
+        console.error("Error stopping audio recording:", error);
+        handleStatusUpdate("Error stopping audio recording.");
+      }
+    } else{
+      console.error("AudioManager instance not available!");
+      setStatus("AudioManager instance not available!");
     }
     // El estado local isRecording se actualizará a través de handleStatusUpdate
-  }, [isRecording, audioManager]);
+  }, [isRecording, audioManager, setIsRecording, setStatus, handleStatusUpdate]);
 
   // --- Descarga PDF (sin cambios respecto a la versión anterior) ---
   const handleDownload = useCallback(async () => {
-    console.log("handleDownload: Iniciada."); // <-- Log 1: Inicio
-
-    const editorElement = editorRef.current?.querySelector(".bn-editor");
-    console.log("handleDownload: Elemento '.bn-editor' encontrado:", editorElement); // <-- Log 2: ¿Elemento existe?
-
-    // Chequeo del editor (useCreateBlockNote puede devolver null inicialmente)
+    console.log("handleDownload: Iniciada.");
     if (!editor) {
         console.error("handleDownload: Abortado - Instancia del editor es null.");
         handleStatusUpdate("Error: Instancia del editor no disponible.");
         return;
     }
-    // Chequeo del elemento HTML
-    if (!editorElement) {
-        console.error("handleDownload: Abortado - No se encontró el elemento '.bn-editor'.");
-        handleStatusUpdate("Error: No se encontró el contenido del editor para PDF.");
-        return;
-    }
 
-    console.log("handleDownload: Chequeos iniciales de editor y elemento pasados."); // <-- Log 3: Pasó chequeos
-
-    // --- Chequear si el editor está vacío ---
-    let isEmpty = editor.document.length === 0;
-    let firstBlockText = "[No verificado]"; // Para el log
-    if (!isEmpty && editor.document.length === 1) {
-        const firstBlock = editor.document[0];
-        firstBlockText = getTextFromBlockContent(firstBlock.content); // Usar helper
+    // Verificar si hay contenido significativo en el editor (para modo transcripción)
+    let editorHasContent = editor.document.length > 0;
+    if (editor.document.length === 1) {
+        const firstBlockText = getTextFromBlockContent(editor.document[0].content);
         if (firstBlockText.trim() === "") {
-            isEmpty = true;
+            editorHasContent = false;
         }
     }
-    console.log(`handleDownload: Chequeo de vacío: length=${editor.document.length}, firstBlockText='${firstBlockText}', isEmpty=${isEmpty}`); // <-- Log 4: Resultado del chequeo
+    
+    // Verificar si hay datos de elección (para modo elección)
+    const electionHasContent = modo === "eleccion" && (resultados.length > 0 || totales);
 
-    if (isEmpty) {
-        console.warn("handleDownload: Abortado - El editor está vacío.");
+    if (modo === "transcripcion" && !editorHasContent) {
+        console.warn("handleDownload: Abortado - El editor está vacío en modo transcripción.");
         handleStatusUpdate("Editor is empty, nothing to download.");
         return;
     }
-    // --- Fin Chequeo ---
+    if (modo === "eleccion" && !editorHasContent && !electionHasContent) {
+        console.warn("handleDownload: Abortado - No hay contenido del editor ni datos de elección.");
+        handleStatusUpdate("No content to download.");
+        return;
+    }
 
-    console.log("handleDownload: Chequeo de vacío pasado. Iniciando generación de PDF..."); // <-- Log 5: Antes de generar PDF
+
+    console.log("handleDownload: Iniciando generación de PDF...");
     handleStatusUpdate("Generating PDF...");
     await new Promise((resolve) => setTimeout(resolve, 100)); // Pequeña pausa
 
     try {
-        console.log("handleDownload: Llamando a html2canvas..."); // <-- Log 6: Antes de html2canvas
-        const canvas = await html2canvas(editorElement as HTMLElement, {
-            scale: 2,
-            useCORS: true,
-            logging: true, // Habilitar logs de html2canvas para más info
+        const pdf = new jsPDF({
+            orientation: 'p', // portrait
+            unit: 'pt',       // points
+            format: 'letter'      // Letter size
         });
-        console.log("handleDownload: html2canvas completado. Canvas obtenido:", canvas); // <-- Log 7: Después de html2canvas
 
-        const imgData = canvas.toDataURL('image/png');
-        console.log("handleDownload: imgData generado (longitud):", imgData.length); // <-- Log 8: ¿Datos de imagen OK?
+        let htmlToRender = "";
 
-        const pdf = new jsPDF('p', 'mm', 'a4');
-        const pdfWidth = pdf.internal.pageSize.getWidth();
-        const pdfHeight = pdf.internal.pageSize.getHeight();
-        const imgWidth = canvas.width;
-        const imgHeight = canvas.height;
-        const ratio = Math.min((pdfWidth - 20) / imgWidth, (pdfHeight - 20) / imgHeight);
-        const imgX = (pdfWidth - imgWidth * ratio) / 2;
-        const imgY = 10;
+        // 1. Obtener HTML del editor de BlockNote (si hay contenido)
+        if (editorHasContent) {
+            const blockNoteHtml = await editor.blocksToHTMLLossy(editor.document);
+            htmlToRender += `<div class="blocknote-content">${blockNoteHtml}</div>`;
+        }
+        
+        // 2. Si es modo elección y hay tablas, obtener su HTML
+        if (modo === "eleccion" && electionHasContent) {
+            const tablasContainer = editorRef.current?.querySelector('.tabla-eleccion');
+            if (tablasContainer) {
+                // Clonar para no afectar el DOM original y limpiar IDs si es necesario
+                const clonedTablas = tablasContainer.cloneNode(true) as HTMLElement;
+                // Para asegurar que estilos CSS del editor.css se apliquen, podríamos necesitar
+                // incluirlos o replicarlos en el string de HTML, o usar estilos inline.
+                // Por simplicidad, aquí solo tomamos el innerHTML.
+                htmlToRender += `<div class="election-tables-container">${clonedTablas.innerHTML}</div>`;
+            }
+        }
+        
+        // Si no hay nada que renderizar después de todo
+        if (htmlToRender.trim() === "") {
+            console.warn("handleDownload: Abortado - No hay contenido HTML para generar el PDF.");
+            handleStatusUpdate("No content to generate PDF.");
+            return;
+        }
 
-        console.log("handleDownload: Añadiendo imagen al PDF..."); // <-- Log 9: Antes de addImage
-        pdf.addImage(imgData, 'PNG', imgX, imgY, imgWidth * ratio, imgHeight * ratio);
+        const fullHtml = `
+          <!DOCTYPE html>
+          <html lang="es">
+          <head>
+            <meta charset="utf-8">
+            <title>Documento</title>
+            <style>
+              body { 
+                font-family: 'Helvetica', 'Arial', sans-serif; /* Fuentes compatibles con PDF */
+                font-size: 10pt; 
+                line-height: 1.5;
+              }
+              .blocknote-content h1, .blocknote-content h2, .blocknote-content h3 {
+                font-family: 'Helvetica', 'Arial', sans-serif;
+                margin-top: 1em;
+                margin-bottom: 0.5em;
+                line-height: 1.5;
+              }
+              .blocknote-content h1 { font-size: 18pt; font-weight: bold; }
+              .blocknote-content h2 { font-size: 16pt; font-weight: bold; }
+              .blocknote-content h3 { font-size: 14pt; font-weight: bold; }
+              .blocknote-content p {
+                margin-bottom: 0.9em;
+              }
+              .blocknote-content strong { font-weight: bold; }
+              .blocknote-content em { font-style: italic; }
+              .blocknote-content ul, .blocknote-content ol { margin-left: 20pt; padding-left: 0; }
+              .blocknote-content li { margin-bottom: 0.2em; }
+              .blocknote-content blockquote {
+                border-left: 2px solid #ccc;
+                margin-left: 0;
+                padding-left: 10pt;
+                color: #555;
+              }
+              .blocknote-content code { /* Estilo para bloques de código */
+                font-family: 'Courier New', Courier, monospace;
+                background-color: #f0f0f0;
+                padding: 8pt;
+                display: block;
+                white-space: pre-wrap; /* Para que el texto largo se ajuste */
+                border-radius: 4px;
+              }
+              .blocknote-content .bn-inline-content[style*="color: gray"] { /* Texto parcial (ejemplo) */
+                  color: #757575 !important; /* Forzar color gris para texto parcial, !important para sobreescribir */
+              }
+              /* Estilos para las tablas de elección */
+              .election-tables-container { margin-top: 20pt; }
+              .election-tables-container h2 {
+                font-size: 14pt;
+                font-weight: bold;
+                margin-bottom: 8pt;
+                color: #333;
+              }
+              .election-tables-container table {
+                width: 100%;
+                border-collapse: collapse;
+                margin-bottom: 15pt;
+                font-size: 9pt;
+              }
+              .election-tables-container th, .election-tables-container td {
+                border: 1px solid #ddd;
+                padding: 6pt;
+                text-align: left;
+              }
+              .election-tables-container th {
+                background-color: #f2f2f2;
+                font-weight: bold;
+              }
+            </style>
+          </head>
+          <body>
+            ${htmlToRender}
+          </body>
+          </html>
+        `;
 
-        console.log("handleDownload: Guardando PDF..."); // <-- Log 10: Antes de save
-        pdf.save('documento_transcrito.pdf');
+        console.log("handleDownload: HTML para PDF"); 
 
-        console.log("handleDownload: Generación de PDF exitosa."); // <-- Log 11: Éxito
-        handleStatusUpdate("PDF Generated.");
+        await pdf.html(fullHtml, {
+            callback: function (doc) {
+                doc.save('documento.pdf');
+                handleStatusUpdate("PDF Generated.");
+                console.log("handleDownload: PDF generado con jsPDF.html().");
+            },
+            x: 30, // Margen izquierdo en la unidad de medida del PDF (pt)
+            y: 30, // Margen superior
+            width: 505, // Ancho del contenido A4 (595pt) - margenes (30*2=60)
+            windowWidth: 600, // Ancho de ventana simulado para renderizar el HTML
+             // autoPaging: 'text' // Intenta paginar basado en el flujo del texto
+             // Considerar usar 'slice' o true si 'text' no funciona bien.
+             // html2canvas: { scale: 2, useCORS: true } // Opciones si jsPDF.html usa html2canvas internamente para algo
+            autoPaging: 'slice', // 'slice' suele ser más robusto para paginación automática de HTML
+            margin: [30, 30, 30, 30] // top, right, bottom, left
+        });
+
+        console.log("handleDownload: Generación de PDF solicitada a jsPDF.html().");
 
     } catch (error) {
-        console.error("handleDownload: Error durante la generación de PDF:", error); // <-- Log 12: Captura de error
+        console.error("handleDownload: Error durante la generación de PDF:", error);
         handleStatusUpdate("Error generating PDF.");
     }
 
-}, [editor, handleStatusUpdate]); // Mantener dependencias
+  }, [editor, handleStatusUpdate, modo, resultados, totales]);
 
   // --- Renderizado ---
   if (!editor) {
@@ -702,14 +804,6 @@ export default function Editor() {
           <BlockNoteView editor={editor} theme={"light"} />
         </div>
       </div>
-
-      <button
-        className="download-button"
-        onClick={handleDownload}
-        disabled={isRecording || status === "Generating PDF..."} // Deshabilitar también mientras genera PDF
-      >
-        Descargar como PDF
-      </button>
     </div>
   );
 }
